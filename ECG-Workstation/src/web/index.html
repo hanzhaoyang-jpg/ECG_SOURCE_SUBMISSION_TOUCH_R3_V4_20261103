@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ECG 心电工作站</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <div class="logo" aria-hidden="true">
+      <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
+        <polyline points="1,12 5,12 7,5 10,17 12.5,9 14.5,12 21,12"
+                  stroke="#3ee08f" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/>
+      </svg>
+    </div>
+    <div>
+      <h1>ECG 心电工作站</h1>
+      <p>Zynq-7020 · AD9280 · fs 360 Hz</p>
+    </div>
+  </div>
+
+  <div class="pills">
+    <span class="pill pill--amber" id="connPill" title="数据来源"><i class="dot"></i><span id="connText">演示数据</span></span>
+    <span class="pill">收包 <span class="num" id="pktValue">0</span></span>
+    <span class="pill">丢包 <span class="num" id="lossValue">0.00</span> %</span>
+    <span class="pill pill--cyan"><i class="dot"></i>本地 <span id="portValue">8765</span></span>
+  </div>
+
+  <div class="top-right">
+    <div class="stack"><span>患者</span><b id="patientText">P0000 · 男 · 45 岁</b></div>
+    <div class="stack clock"><span id="date">2026-10-29</span><b id="clock">14:32:08</b></div>
+    <button class="icon-btn" id="btnSettings" title="设置" aria-label="设置">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+        <circle cx="12" cy="12" r="3.2"/>
+        <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1 1.55V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1.1-1.55 1.7 1.7 0 0 0-1.88.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.55-1H3a2 2 0 1 1 0-4h.09A1.7 1.7 0 0 0 4.6 8.9a1.7 1.7 0 0 0-.34-1.88l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34H9a1.7 1.7 0 0 0 1-1.55V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1 1.55 1.7 1.7 0 0 0 1.88-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87V9a1.7 1.7 0 0 0 1.55 1H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.55 1z"/>
+      </svg>
+    </button>
+  </div>
+</header>
+
+<main class="layout">
+  <div class="col-main">
+    <section class="card wave">
+      <div class="card-head">
+        <h2>II 导联 <span class="chip" id="liveChip">实时</span><span class="meta" style="font-weight:400">· 360 Hz · 8 bit</span></h2>
+        <div class="meta" id="waveMeta">25 mm/s · 10 mm/mV · 0.05–40 Hz · 50 Hz 陷波</div>
+      </div>
+      <div class="plot" id="plot">
+        <canvas id="waveCanvas"></canvas>
+        <div class="badge" id="frozenBadge">已冻结 · 按空格继续</div>
+        <div class="rec-badge" id="recBadge"><i></i><span id="recText">REC · 00:00</span></div>
+      </div>
+    </section>
+
+    <section class="card event">
+      <div class="card-head" style="height:44px">
+        <h2 style="font-size:13px">事件时间轴 · 最近 60 s</h2>
+        <div class="meta" id="eventMeta">异常 0 次</div>
+      </div>
+      <canvas id="eventCanvas"></canvas>
+    </section>
+
+    <section class="card trend">
+      <div class="card-head" style="height:44px">
+        <h2 style="font-size:13px">心率趋势 · 最近 5 min</h2>
+        <div class="meta" id="trendMeta">平均 71 bpm · 最低 66 · 最高 78</div>
+      </div>
+      <canvas id="trendCanvas"></canvas>
+    </section>
+  </div>
+
+  <aside class="col-rail">
+    <section class="card rail-card">
+      <div class="rail-head"><span>心率</span><span class="tag">HR</span></div>
+      <div class="hr-wrap">
+        <div class="hr-num num"><b id="hrValue">72</b></div>
+        <div class="hr-unit">bpm</div>
+      </div>
+      <div class="hr-foot">
+        <span>RR <b class="num" id="rrValue">833</b> ms</span>
+        <span class="ok" id="rhythmHint">窦性 · 规整</span>
+      </div>
+    </section>
+
+    <section class="card rail-card">
+      <div class="rail-head"><span>节律分类</span><span class="tag" id="classTag">1D-CNN</span></div>
+      <div class="rhythm-main">
+        <div class="class-box" id="classBox">N</div>
+        <div class="rhythm-text">
+          <b id="className">正常</b>
+          <span id="classDesc">窦性心律 · 未见异常</span>
+        </div>
+        <div class="conf"><b class="num" id="confValue">92 %</b><span>置信度</span></div>
+      </div>
+      <div class="class-counts">
+        <div id="cntF"><span>F</span><b>0</b></div>
+        <div id="cntN" class="on"><span>N</span><b id="nCount">0</b></div>
+        <div id="cntS"><span>S</span><b>0</b></div>
+        <div id="cntV" class="v"><span>V</span><b id="vCount">0</b></div>
+      </div>
+    </section>
+
+    <section class="card rail-card">
+      <div class="rail-head"><span>信号质量 SQI</span><span class="tag" id="sqiTag">2 s 窗口</span></div>
+      <div class="sqi-main">
+        <b class="num" id="sqiValue">86</b>
+        <span id="sqiLabel">良好</span>
+        <em>/ 100</em>
+      </div>
+      <div class="sqi-bar"><i id="sqiBar"></i></div>
+      <div class="sqi-chips" id="sqiChips">
+        <span>余量充足</span><span>无削顶</span><span>无脱落</span>
+      </div>
+    </section>
+
+    <section class="card rail-card">
+      <div class="rail-head"><span>前端与设备</span><span class="tag">CN121</span></div>
+      <dl class="device-rows">
+        <dt>增益</dt><dd id="devGain">960 ×</dd>
+        <dt>高通 / 低通</dt><dd id="devFilter">0.05 / 40 Hz</dd>
+        <dt>50 Hz 陷波</dt><dd id="devNotch">开</dd>
+        <dt>导联脱落 LOD</dt><dd class="ok" id="devLod">正常</dd>
+        <dt>过载 OTR</dt><dd class="ok" id="devOtr">正常</dd>
+        <dt>SD 卡</dt><dd id="devSd">12.4 GB 可用</dd>
+      </dl>
+    </section>
+
+    <section class="card actions">
+      <button class="btn btn--primary" id="btnRecord"><i class="dot"></i><span>开始记录</span></button>
+      <button class="btn" id="btnFreeze"><span>冻结</span></button>
+      <button class="btn" id="btnSnapshot"><span>快照</span></button>
+      <button class="btn" id="btnReport"><span>生成报告</span></button>
+      <div class="hint">Space 冻结 · R 记录 · S 快照</div>
+    </section>
+  </aside>
+</main>
+
+<div class="scrim" id="scrim"></div>
+
+<aside class="drawer" id="drawer" aria-hidden="true">
+  <header>
+    <h3>显示与前端设置</h3>
+    <button class="icon-btn" id="btnCloseDrawer" aria-label="关闭">✕</button>
+  </header>
+  <div class="body">
+    <div class="field">
+      <label>走纸速度</label>
+      <div class="seg" data-key="paper">
+        <button data-v="12.5">12.5 mm/s</button>
+        <button data-v="25" class="on">25 mm/s</button>
+        <button data-v="50">50 mm/s</button>
+      </div>
+      <div class="note">改变时间窗口：12.5 → 10 s，25 → 5 s，50 → 2.5 s</div>
+    </div>
+    <div class="field">
+      <label>幅度增益</label>
+      <div class="seg" data-key="amp">
+        <button data-v="5">5 mm/mV</button>
+        <button data-v="10" class="on">10 mm/mV</button>
+        <button data-v="20">20 mm/mV</button>
+      </div>
+    </div>
+    <div class="field">
+      <label>前端增益（CN121）</label>
+      <div class="seg" data-key="gain">
+        <button data-v="480">480×</button>
+        <button data-v="960" class="on">960×</button>
+      </div>
+      <div class="note">下发需要固件支持 CMD_SET_AFE（v2 协议）</div>
+    </div>
+    <div class="field">
+      <label>低通</label>
+      <div class="seg" data-key="lp">
+        <button data-v="40" class="on">40 Hz</button>
+        <button data-v="150">150 Hz</button>
+      </div>
+    </div>
+    <div class="field">
+      <label>50 Hz 陷波</label>
+      <div class="seg" data-key="notch">
+        <button data-v="1" class="on">开</button>
+        <button data-v="0">关</button>
+      </div>
+    </div>
+    <div class="field">
+      <label>演示</label>
+      <div class="seg">
+        <button id="btnInject">注入一次室早</button>
+      </div>
+      <div class="note">仅演示模式生效，用于预演异常事件流程</div>
+    </div>
+    <div class="field">
+      <label>本机地址（板卡 PEER_IP 需与此一致）</label>
+      <div class="note" id="localIpText">检测中…</div>
+      <div class="note">板卡默认 192.168.7.10 → 本机，UDP 5005；板卡默认对端是 192.168.7.1</div>
+    </div>
+    <div class="field">
+      <label>会话</label>
+      <div class="seg">
+        <button id="btnQuit">退出工作站</button>
+      </div>
+      <div class="note">关闭窗口后，后台进程也会在无心跳时自动退出</div>
+    </div>
+  </div>
+  <div class="foot">
+    <span id="aboutText">ECG 工作站 v1.1 · 本地服务 127.0.0.1</span>
+    <span>科研 / 教学演示用途，不作为诊断依据</span>
+  </div>
+</aside>
+
+<div class="toast" id="toast"></div>
+
+<script src="app.js"></script>
+</body>
+</html>

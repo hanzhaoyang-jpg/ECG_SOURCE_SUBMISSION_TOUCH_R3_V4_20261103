@@ -1,0 +1,8 @@
+# Eclipse regenerates Debug/src/subdir.mk; keep custom sources out of that file.
+# Add only files missing from the auto-generated source list.
+ECG_CONTROL_NAMES := ecg_standalone ecg_settings_sd ecg_board_keys ecg_touch
+ECG_CONTROL_SRCS := $(addprefix ../src/,$(addsuffix .c,$(ECG_CONTROL_NAMES)))
+ECG_CONTROL_MISSING := $(filter-out $(C_SRCS),$(ECG_CONTROL_SRCS))
+C_SRCS += $(ECG_CONTROL_MISSING)
+OBJS += $(patsubst ../src/%.c,./src/%.o,$(ECG_CONTROL_MISSING))
+C_DEPS += $(patsubst ../src/%.c,./src/%.d,$(ECG_CONTROL_MISSING))

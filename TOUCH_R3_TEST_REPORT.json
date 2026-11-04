@@ -1,0 +1,38 @@
+{
+  "schema": "ecg.touch_r3.merge_validation.v1",
+  "source_baseline": "ECG_SOURCE_SUBMISSION_CLEAN_V3_20261103(1).zip",
+  "change_backup": "change_backup_since_handoff_20261103.zip",
+  "merged": "ecg_touch.c and ecg_standalone.h exactly from backup; r3 paths/revision selectively merged; V3 per-profile configs and SDK configurable path retained",
+  "tests": {
+    "touch_user_interface_host": "PASS (8 orientations, six buttons, boundary/rejection)",
+    "sd_settings_host": "PASS (parse, storage recovery, config)",
+    "keys_host": "PASS",
+    "main_controls_host": "PASS",
+    "recorder_close_host": "PASS",
+    "cnn_async_host": "PASS",
+    "lcd_sweep_4_profiles": "PASS",
+    "lcd_flush": "PASS",
+    "go_build": "PASS",
+    "r3_gpio_physical_jtag": "USER_REPORTED_PASS_NOT_RETESTED",
+    "xilinx_sdk2018_build": "NOT_RUN",
+    "sd_cold_boot": "NOT_RUN",
+    "hardware_communication": "NOT_RUN"
+  },
+  "warning": "Host touch test does not exercise EMIO electrical behavior; physical cold boot pending.",
+  "diff_from_v3": {
+    "changed": [
+      "FILE_MANIFEST_SHA256.json",
+      "README.md",
+      "d_cnn2/d_cnn2/d_cnn2.sdk/SD_state/src/ecg_standalone.h",
+      "d_cnn2/d_cnn2/d_cnn2.sdk/SD_state/src/ecg_touch.c",
+      "docs/ECG_TOUCH_WORKSTATION.md",
+      "tools/build_standalone.ps1",
+      "tools/make_standalone_boot.ps1"
+    ],
+    "added": [
+      "TOUCH_R3_MERGE_AUDIT.md",
+      "TOUCH_R3_TEST_REPORT.json"
+    ],
+    "removed": []
+  }
+}
