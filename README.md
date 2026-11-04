@@ -1,46 +1,49 @@
-# 基于 Zynq-7020 的长时 ECG 监测系统｜参赛源码候选包（触摸 r3 修复合并 V4）
+# Zynq-7020 长时 ECG 监测系统
 
-**SUBMISSION CANDIDATE / 不代表公开授权已确认，也不代表从零构建通过。** 原始 ZIP 不修改。
+系统通过 CN121 和 AD9280 以 360 Hz 采集 ECG。板端完成滤波、R 峰检测、信号质量评估和 CNN 推理，通过 LCD 显示并将记录写入 SD 卡。联网模式还可以通过有线网络向 Go 工作站发送数据，使用 UDP v1（端口 5005，每包 28 字节）。
 
-## 工程构成
-- Vivado 2018.3: `d_cnn2/d_cnn2/d_cnn2.xpr`，PL 逻辑、BD、约束、自定义 IP
-- Xilinx SDK 2018.3: `d_cnn2/d_cnn2/d_cnn2.sdk/SD_state/src`，BSP、链接脚本
-- 原有 HLS CNN: `d_cnn_3/d_cnn_3/src` 和集成 IP
-- Go 工作站: `ECG-Workstation/src`，本地 Web，UDP v1
-- 测试与构建入口：`tools/`；离线/联网配置：`configs/`
+## 推理 IP 
 
-## 关键约束
-CN121 + AD9280，360 Hz；保留既有滤波、R 峰、SQI、CNN、LCD、SD 格式和有线 UDP v1（5005，28 字节）。只有 workstation 模式联网。未替换为新的研究 CNN。
+本提交版使用 `d_cnn_3` 推理 IP，Vivado BD 中的活动实例为 `d_cnn_3_0`，PS 通过 AXI DMA 向其发送 864 字节心搏输入。自有 `ecg_int8_pl` 模型仍在单独验证，**未纳入本提交版**。
 
-## Windows 构建（需 Vivado/SDK 2018.3 工具链）
-在**工程根目录**的 PowerShell 中，按以下顺序运行。将工具路径替换为本机安装路径：
+## 工程目录
+
+| 目录 | 内容 |
+| --- | --- |
+| `d_cnn2/d_cnn2/` | Vivado 工程、RTL、约束、自定义 IP 和 SDK 工程 |
+| `d_cnn_3/d_cnn_3/src/` | CNN 的 HLS 源码 |
+| `ECG-Workstation/src/` | Go 工作站和 Web 界面 |
+| `tools/` | 构建与测试脚本 |
+| `configs/` | 离线和联网模式的 SD 卡配置 |
+
+## 构建 SD 卡镜像
+
+在 Windows 上安装 Vivado 和 Xilinx SDK 2018.3。在仓库根目录打开 PowerShell，将下面的工具路径改为实际安装位置。
 
 ```powershell
 $V = 'D:/tool/Vivado/2018.3/bin/vivado.bat'
 $S = 'D:/tool/SDK/2018.3'
+$Profile = 'offline'  # 联网模式用 workstation
+
 & $V -mode batch -source tools/vivado/vivado_direct_build.tcl -tclargs build_output/touch_20261103
 & "$S/bin/xsct.bat" tools/vivado/build_standalone_fsbl.tcl touch
-& .\tools\build_standalone.ps1 -Sdk $S -Profile offline
-& .\tools\build_standalone.ps1 -Sdk $S -Profile workstation
-& .\tools\test_standalone.ps1
-& .\tools\test_lcd_display.ps1
-& .\tools\make_standalone_boot.ps1 -Sdk $S -Profile offline
-& .\tools\make_standalone_boot.ps1 -Sdk $S -Profile workstation
+& .\tools\build_standalone.ps1 -Sdk $S -Profile $Profile
+& .\tools\make_standalone_boot.ps1 -Sdk $S -Profile $Profile
 ```
 
-工作站在 `ECG-Workstation/src` 执行 `go build ./...`，可运行 `python tools/test_workstation_udp.py` 的兼容测试（需按脚本要求准备服务或测试环境）。
+将 `build_output/touch_20261103/r3/<模式>/sd_card/` 下的 `BOOT.BIN` 和 `ECGCFG.INI` 一起复制到 SD 卡根目录。打包脚本先写入这两个文件，再生成验收清单。生成清单还需要主机测试日志、工作站程序和 UDP 测试日志，所需路径见 `tools/make_standalone_boot.ps1`。
 
-这些命令为**待验收复现步骤**，本包未在真实 Xilinx 2018.3 环境执行通过。项目脚本中部分测试/manifest 依赖输出日志，构建应先保存相应测试结果，再产出正式启动包。
+`build_output/` 是上述脚本在本地运行时创建的输出目录，不是提交包必须预先包含的输入。这里的命令展示构建顺序，尚不能视为从干净副本完成了端到端复现：`make_standalone_boot.ps1` 在生成镜像后还会要求 `tests.log`、`lcd_tests.log`、`workstation_udp_test.log` 和 `ECG-Workstation.exe` 才能写出完整验收清单；这些文件未随包提供，也不会由上面四条命令全部生成。`verify_standalone_package.py` 对 offline/workstation 还引用旧版 `build_output/status_pins_20261008/design_1_wrapper.hdf` 作地址映射对照，该历史 HDF 不在提交包内。`stage_reference_hardware.ps1` 的默认输入 `reference_build_artifacts/` 也未随包提供，不能把它当作新构建步骤。重新构建应用时还需核对 SDK BSP 与本次 HDF 的硬件地址映射。现有 `build/reports/` 保存的是此前构建报告，不是执行上述命令时自动生成的报告。
 
-`reference_build_artifacts` 是旧工程生成的 bit/hdf/hwdef 参考对照，不是本次从零生成。若只需重建软件，可执行 `tools/stage_reference_hardware.ps1` 暂存其副本（仍不等于全量构建验收）。
+## 运行工作站
 
-见 `SOURCE_AUDIT.md`、`THIRD_PARTY_NOTICES.md`、`FILE_MANIFEST_SHA256.json` 和 `docs/ECG_TOUCH_WORKSTATION.md`。
+在 `ECG-Workstation/src` 下运行 `go build ./...`。联网版使用有线直连：电脑地址设为 `192.168.7.1/24`，板端默认 `192.168.7.10/24`，UDP 端口 `5005`；离线版不需要网线。触摸首次启用时按屏幕提示依次点左上、右上、左下，触摸失效可使用板载按键。板端 SD 记录与电脑收到的数据副本是两条独立路径。
 
-## 触摸 r3 修复
-已将经 JTAG 验证的 GPIO/I²C 拉低源码修复合并进 `ecg_touch.c`，保留 V3 构建脚本的 SDK 可配置路径及 profile 区分；详见 `TOUCH_R3_MERGE_AUDIT.md`。r3 SD 冷启动仍待验证。
+## 验证记录
 
-## 调试代码清理审计
-请阅读 `DEBUG_REDUNDANCY_AUDIT.md`；本版仅移出可追溯的历史诊断文件并补齐三份漏包测试源。正常 UART 故障诊断、RTL/IP 和 SDK BSP 均保留。
+V4 源码已用 Vivado 2018.3 完成综合、布局布线和比特流生成。布线后满足工程指定的时序约束。离线和联网两种启动镜像均已生成。开发板完成了一次上电测试，长时间运行仍待验证。
+
+第三方组件来源和待核对授权见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。设计说明及 AI 协作记录见 `report/`，验证报告见 `build/` 和 `board/`。
 
 # 第三方组件与版权声明（THIRD_PARTY_NOTICES）
 

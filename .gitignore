@@ -1,0 +1,5 @@
+/build_output/
+/reference_build_artifacts/
+.Xil/
+*.jou
+*.log

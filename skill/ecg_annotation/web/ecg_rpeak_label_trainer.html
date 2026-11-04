@@ -1,0 +1,1548 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>ECG R峰标注与逻辑训练工具</title>
+<style>
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: "Segoe UI", system-ui, Arial, sans-serif;
+  background: #0f172a;
+  color: #e5e7eb;
+}
+.wrap { max-width: 1320px; margin: 0 auto; padding: 16px; }
+h1 { margin: 0 0 6px; font-size: 22px; color: #7dd3fc; }
+.sub { color: #94a3b8; font-size: 13px; line-height: 1.6; }
+.panel {
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid #263349;
+  border-radius: 12px;
+  background: #172033;
+}
+.grid { display: grid; grid-template-columns: repeat(12, 1fr); gap: 10px; align-items: end; }
+.span2 { grid-column: span 2; }
+.span3 { grid-column: span 3; }
+.span4 { grid-column: span 4; }
+.span6 { grid-column: span 6; }
+.span12 { grid-column: span 12; }
+label { display: block; color: #a8b3c7; font-size: 12px; margin-bottom: 4px; }
+input, select, button, textarea {
+  font: inherit;
+  border-radius: 8px;
+  border: 1px solid #43516b;
+  background: #0b1220;
+  color: #e5e7eb;
+}
+input, select { width: 100%; padding: 7px 8px; }
+input[type="file"] { padding: 6px; }
+button {
+  cursor: pointer;
+  padding: 8px 11px;
+  background: #111827;
+}
+button:hover { border-color: #38bdf8; background: #1f2937; }
+button.primary { background: #075985; border-color: #0ea5e9; }
+button.good { background: #14532d; border-color: #22c55e; }
+button.warn { background: #7c2d12; border-color: #f97316; }
+button.danger { background: #7f1d1d; border-color: #ef4444; }
+button.info { background: #1e3a8a; border-color: #60a5fa; }
+button.purple { background: #581c87; border-color: #c084fc; }
+button:disabled { opacity: .5; cursor: not-allowed; }
+.inlineCheck {
+  display: inline-flex;
+  gap: 5px;
+  align-items: center;
+  color: #cbd5e1;
+  font-size: 12px;
+}
+.inlineCheck input { width: auto; }
+.row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.pill {
+  display: inline-block;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: #0b1220;
+  border: 1px solid #334155;
+  color: #cbd5e1;
+  font-size: 12px;
+}
+.pill.good { color: #86efac; border-color: #166534; }
+.pill.bad { color: #fca5a5; border-color: #991b1b; }
+.canvasBox {
+  position: relative;
+  width: 100%;
+  height: 640px;
+  background: #020617;
+  border: 1px solid #334155;
+  border-radius: 10px;
+  overflow: hidden;
+}
+canvas { width: 100%; height: 100%; display: block; }
+.hint { color: #94a3b8; font-size: 12px; line-height: 1.6; }
+.stats {
+  display: grid;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  gap: 8px;
+}
+.stat {
+  background: #0b1220;
+  border: 1px solid #263349;
+  border-radius: 10px;
+  padding: 8px;
+}
+.stat .k { color: #94a3b8; font-size: 12px; }
+.stat .v { color: #f8fafc; font-size: 18px; margin-top: 2px; }
+textarea {
+  width: 100%;
+  min-height: 180px;
+  padding: 10px;
+  resize: vertical;
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 12px;
+  line-height: 1.45;
+}
+.legend span { margin-right: 14px; }
+.c-blue { color: #60a5fa; }
+.c-orange { color: #f59e0b; }
+.c-purple { color: #c084fc; }
+.c-green { color: #22c55e; }
+.c-red { color: #ef4444; }
+.c-yellow { color: #fde047; }
+.small { font-size: 12px; color: #94a3b8; }
+@media (max-width: 900px) {
+  .grid { grid-template-columns: repeat(2, 1fr); }
+  .span2, .span3, .span4, .span6, .span12 { grid-column: span 2; }
+  .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>ECG R峰标注与逻辑训练工具</h1>
+  <div class="sub">
+    目标：加载 SD 卡导出的 <code>RECxxxx.CSV</code>，人工标注真实 R 峰，用当前板端滤波/SQI/R峰/RR逻辑复现检测结果，然后用标签评估与搜索参数。页面为纯前端，数据不会上传。
+  </div>
+
+  <div class="panel">
+    <div class="grid">
+      <div class="span4">
+        <label>加载 ECG CSV</label>
+        <input id="fileInput" type="file" accept=".csv,text/csv" />
+      </div>
+      <div class="span2">
+        <label>显示窗口(s)</label>
+        <input id="windowSec" type="number" value="4" min="1" max="60" step="0.5" />
+      </div>
+      <div class="span2">
+        <label>起始时间(s)</label>
+        <input id="startSec" type="number" value="0" min="0" step="1" />
+      </div>
+      <div class="span2">
+        <label>显示通道</label>
+        <select id="channelMode">
+          <option value="filtered">CSV filtered</option>
+          <option value="filtered_old">CSV filtered_old</option>
+          <option value="csv_qrs">CSV qrs</option>
+          <option value="csv_env">CSV env</option>
+          <option value="qrs">QRS path</option>
+          <option value="env">Envelope</option>
+          <option value="raw">Raw centered</option>
+          <option value="rt_ema">实时候选: EMA平滑</option>
+          <option value="rt_med_ema">实时候选: 中值3点+EMA</option>
+          <option value="rt_hp_lp">实时候选: 基线跟踪+低通</option>
+          <option value="rt_despike">实时候选: 限幅去毛刺+平滑</option>
+        </select>
+      </div>
+      <div class="span2">
+        <button id="btnRun" class="primary">运行当前逻辑</button>
+      </div>
+
+      <div class="span12 row">
+        <button id="btnPrev">← 前一屏</button>
+        <button id="btnNext">后一屏 →</button>
+        <button id="btnZoomIn">放大</button>
+        <button id="btnZoomOut">缩小</button>
+        <button id="btnCleanView" class="info">干净标注视图</button>
+        <button id="btnClearAuto" class="warn">清空自动峰</button>
+        <button id="btnClearLabels" class="danger">清空人工标签</button>
+        <button id="btnExportLabels" class="good">导出人工标签 CSV</button>
+        <button id="btnExportJson" class="good">导出训练 JSON</button>
+        <button id="btnLoadLabels">导入标签 CSV/JSON</button>
+        <input id="labelInput" type="file" accept=".csv,.json,application/json,text/csv" style="display:none" />
+      </div>
+      <div class="span12 row">
+        <span class="pill">显示辅助</span>
+        <label class="inlineCheck"><input id="showRaw" type="checkbox" />raw叠加</label>
+        <label class="inlineCheck"><input id="showAuto" type="checkbox" checked />自动R峰</label>
+        <label class="inlineCheck"><input id="showManual" type="checkbox" checked />人工R峰</label>
+        <label class="inlineCheck"><input id="showEnv" type="checkbox" />包络/阈值</label>
+        <label class="inlineCheck"><input id="showSqiBg" type="checkbox" checked />SQI背景</label>
+        <div style="width:110px"><label>显示平滑点数</label><input id="viewSmooth" type="number" value="5" min="1" max="41" step="2" /></div>
+        <div style="width:120px"><label>幅值缩放</label><select id="scaleMode"><option value="robust">抗异常值</option><option value="full">完整范围</option></select></div>
+      </div>
+      <div class="span12 row">
+        <span class="pill">SQI 区间标签</span>
+        <button id="btnMarkSqiGood" class="good">标当前窗口为 SQI GOOD</button>
+        <button id="btnMarkSqiClipped" class="danger">标 ADC 饱和/超量程</button>
+        <button id="btnMarkSqiNoisy" class="warn">标运动噪声/毛刺</button>
+        <button id="btnMarkSqiDrift" class="purple">标基线漂移</button>
+        <button id="btnMarkSqiFlat" class="danger">标平线/接触异常</button>
+        <button id="btnMarkSqiUncertain" class="info">标不确定</button>
+        <button id="btnClearSqiLabels" class="warn">清空 SQI 标签</button>
+        <button id="btnSearchSqi" class="good">按 SQI 标签搜索参数</button>
+        <span class="pill" id="sqiLabelInfo">SQI labels: 0</span>
+      </div>
+      <div class="span12 hint">
+        操作：鼠标左键点击波形附近添加/删除人工 R 峰；按住 Shift 点击可强制添加；滚轮缩放，A/D 或 ←/→ 前后移动。点击时会自动吸附到附近最大绝对幅值点。SQI 用“当前显示窗口”做区间标签：GOOD 表示适合检测，CLIPPED 表示 ADC 贴近 0/255 或卡死，NOISY 表示运动噪声/毛刺，DRIFT 表示基线漂移，FLAT 表示平线/接触异常。带“实时候选”的通道都是逐点因果滤波，不使用未来数据，只用于先比较显示效果。
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="grid">
+      <div class="span2"><label>阈值比例 thresholdScale</label><input id="thresholdScale" type="number" value="0.10" min="0.05" max="1.2" step="0.01" /></div>
+      <div class="span2"><label>不应期(ms)</label><input id="refractoryMs" type="number" value="360" min="180" max="600" step="10" /></div>
+      <div class="span2"><label>最小QRS幅值</label><input id="minAbsQrs" type="number" value="0.040" min="0" max="1" step="0.001" /></div>
+      <div class="span2"><label>初始化(s)</label><input id="initSec" type="number" value="2" min="0.5" max="8" step="0.5" /></div>
+      <div class="span2"><label>匹配容差(ms)</label><input id="matchMs" type="number" value="120" min="40" max="250" step="10" /></div>
+      <div class="span2"><label>评估范围</label><select id="evalRangeMode"><option value="manual_span">已标注区间±2s</option><option value="window">当前显示窗口</option><option value="all">整份记录</option></select></div>
+      <div class="span2"><label>SQI门控</label><select id="useSqi"><option value="1">启用</option><option value="0">禁用</option></select></div>
+
+      <div class="span2"><label>SQI削顶%</label><input id="clipPct" type="number" value="5" min="1" max="80" step="1" /></div>
+      <div class="span2"><label>SQI均值差分</label><input id="meanDiffMax" type="number" value="0.10" min="0.01" max="1" step="0.01" /></div>
+      <div class="span2"><label>SQI毛刺差分</label><input id="spikeDiff" type="number" value="0.20" min="0.02" max="2" step="0.01" /></div>
+      <div class="span2"><label>SQI毛刺%</label><input id="spikePct" type="number" value="20" min="1" max="80" step="1" /></div>
+      <div class="span2"><label>SQI使用OTR</label><select id="sqiUseOtr"><option value="0">禁用（当前板）</option><option value="1">启用</option></select></div>
+      <div class="span2"><label>连续削顶立即阻断(点)</label><input id="hardClipRun" type="number" value="8" min="2" max="72" step="1" /></div>
+      <div class="span2"><label>任意码值连续平线阻断(点)</label><input id="constantRun" type="number" value="72" min="2" max="720" step="1" /></div>
+      <div class="span2"><label>量程边缘预警%</label><input id="headroomPct" type="number" value="25" min="1" max="90" step="1" /></div>
+      <div class="span2"><label>ADC均值下限</label><input id="meanAdcMin" type="number" value="32" min="0" max="127" step="1" /></div>
+      <div class="span2"><label>ADC均值上限</label><input id="meanAdcMax" type="number" value="223" min="128" max="255" step="1" /></div>
+      <div class="span2"><label>RR最小(ms)</label><input id="rrMinMs" type="number" value="300" min="200" max="800" step="10" /></div>
+      <div class="span2"><label>RR最大(ms)</label><input id="rrMaxMs" type="number" value="2000" min="800" max="3000" step="50" /></div>
+
+      <div class="span12 row">
+        <button id="btnSearch" class="good">按人工标签搜索参数</button>
+        <button id="btnExportC" class="good">生成 C 参数建议</button>
+        <span class="pill" id="fileInfo">未加载</span>
+        <span class="pill" id="polarityInfo">极性：未知</span>
+        <span class="pill" id="sqiInfo">SQI：未知</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="legend small">
+      <span class="c-blue">蓝：显示通道</span>
+      <span class="c-orange">橙：raw_adc</span>
+      <span class="c-green">绿：人工R峰</span>
+      <span class="c-red">红：自动R峰</span>
+      <span class="c-purple">紫：阈值/包络</span>
+      <span class="c-yellow">黄：SQI非GOOD</span>
+    </div>
+    <div class="canvasBox"><canvas id="chart"></canvas></div>
+  </div>
+
+  <div class="panel stats">
+    <div class="stat"><div class="k">人工R峰</div><div class="v" id="manualCount">0</div></div>
+    <div class="stat"><div class="k">自动R峰</div><div class="v" id="autoCount">0</div></div>
+    <div class="stat"><div class="k">TP</div><div class="v" id="tpCount">0</div></div>
+    <div class="stat"><div class="k">FP</div><div class="v" id="fpCount">0</div></div>
+    <div class="stat"><div class="k">FN</div><div class="v" id="fnCount">0</div></div>
+    <div class="stat"><div class="k">F1</div><div class="v" id="f1Score">0</div></div>
+    <div class="stat"><div class="k">平均HR</div><div class="v" id="meanHr">0</div></div>
+    <div class="stat"><div class="k">RR CV</div><div class="v" id="rrCv">0</div></div>
+  </div>
+
+  <div class="panel">
+    <label>训练/评估输出</label>
+    <textarea id="output" spellcheck="false" readonly></textarea>
+  </div>
+</div>
+
+<script>
+"use strict";
+
+const FS_DEFAULT = 360;
+const ECG_QRS_MWI_LEN = 54;
+const COLORS = {
+  grid: "#1e293b",
+  axis: "#475569",
+  signal: "#60a5fa",
+  raw: "#f59e0b",
+  manual: "#22c55e",
+  auto: "#ef4444",
+  env: "#c084fc",
+  threshold: "#f472b6",
+  sqiBad: "rgba(250,204,21,0.14)",
+  text: "#cbd5e1"
+};
+
+const SQI_LABEL_META = {
+  GOOD:      { text: "#86efac", fill: "rgba(34,197,94,0.18)", reject: false },
+  CLIPPED:   { text: "#fca5a5", fill: "rgba(239,68,68,0.24)", reject: true },
+  NOISY:     { text: "#fdba74", fill: "rgba(249,115,22,0.20)", reject: true },
+  DRIFT:     { text: "#d8b4fe", fill: "rgba(168,85,247,0.18)", reject: true },
+  FLAT:      { text: "#f87171", fill: "rgba(127,29,29,0.28)", reject: true },
+  UNCERTAIN: { text: "#93c5fd", fill: "rgba(59,130,246,0.16)", reject: true },
+  BAD:       { text: "#fca5a5", fill: "rgba(239,68,68,0.20)", reject: true }
+};
+
+let ecg = null;
+let manualPeaks = [];
+let autoPeaks = [];
+let sqiStates = [];
+let sqiWarnings = [];
+let sqiLabels = [];
+let lastFilter = null;
+let realtimeViewFilter = null;
+let lastEval = null;
+let fileName = "";
+
+const el = id => document.getElementById(id);
+const canvas = el("chart");
+const ctx = canvas.getContext("2d");
+
+function log(msg) {
+  el("output").value = msg;
+}
+
+function num(id) {
+  return Number(el(id).value);
+}
+
+function checked(id) {
+  const node = el(id);
+  return node ? !!node.checked : false;
+}
+
+function paramsFromUi() {
+  return {
+    fs: ecg ? ecg.fs : FS_DEFAULT,
+    thresholdScale: num("thresholdScale"),
+    refractoryMs: num("refractoryMs"),
+    minAbsQrs: num("minAbsQrs"),
+    initSec: num("initSec"),
+    matchMs: num("matchMs"),
+    useSqi: el("useSqi").value === "1",
+    clipPct: num("clipPct"),
+    meanDiffMax: num("meanDiffMax"),
+    spikeDiff: num("spikeDiff"),
+    spikePct: num("spikePct"),
+    sqiUseOtr: el("sqiUseOtr").value === "1",
+    hardClipRun: Math.max(2, Math.round(num("hardClipRun"))),
+    constantRun: Math.max(2, Math.round(num("constantRun"))),
+    headroomPct: num("headroomPct"),
+    meanAdcMin: num("meanAdcMin"),
+    meanAdcMax: num("meanAdcMax"),
+    rrMinMs: num("rrMinMs"),
+    rrMaxMs: num("rrMaxMs")
+  };
+}
+
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+function mean(a) { return a.length ? a.reduce((s, v) => s + v, 0) / a.length : 0; }
+function std(a) {
+  if (!a.length) return 0;
+  const m = mean(a);
+  return Math.sqrt(mean(a.map(v => (v - m) * (v - m))));
+}
+function median(a) {
+  if (!a.length) return 0;
+  const b = Array.from(a).sort((x, y) => x - y);
+  const mid = Math.floor(b.length / 2);
+  return b.length % 2 ? b[mid] : 0.5 * (b[mid - 1] + b[mid]);
+}
+
+function percentile(values, q) {
+  const vals = values.filter(Number.isFinite).sort((a, b) => a - b);
+  if (!vals.length) return 0;
+  const pos = clamp(q, 0, 1) * (vals.length - 1);
+  const lo = Math.floor(pos);
+  const hi = Math.ceil(pos);
+  if (lo === hi) return vals[lo];
+  return vals[lo] + (vals[hi] - vals[lo]) * (pos - lo);
+}
+
+function movingAverage(arr, points) {
+  const n = Math.max(1, Math.round(points));
+  if (n <= 1 || !arr.length) return arr;
+  const half = Math.floor(n / 2);
+  const out = new Array(arr.length);
+  let sum = 0;
+  let count = 0;
+  let left = 0;
+  let right = -1;
+  for (let i = 0; i < arr.length; i++) {
+    while (right < arr.length - 1 && right < i + half) {
+      right++;
+      if (Number.isFinite(arr[right])) {
+        sum += arr[right];
+        count++;
+      }
+    }
+    while (left < arr.length && left < i - half) {
+      if (Number.isFinite(arr[left])) {
+        sum -= arr[left];
+        count--;
+      }
+      left++;
+    }
+    out[i] = count > 0 ? sum / count : arr[i];
+  }
+  return out;
+}
+
+function parseCSV(text) {
+  const lines = text.split(/\r?\n/).filter(x => x.trim());
+  if (lines.length < 2) throw new Error("CSV没有数据");
+  const header = lines[0].split(",").map(x => x.trim());
+  const col = name => header.indexOf(name);
+  const idxSample = col("sample_index");
+  const idxTs = col("timestamp_ms");
+  const idxAdc = col("raw_adc");
+  const idxFilt = col("filtered");
+  const idxFiltOld = col("filtered_old");
+  const idxQrs = col("qrs");
+  const idxEnv = col("env");
+  const idxSqiState = col("sqi_state");
+  const idxSqiReason = col("sqi_reason");
+  const idxSqiWarning = col("sqi_warning");
+  const idxLod = col("lod");
+  const idxOtr = col("otr");
+  if (idxTs < 0 || idxAdc < 0) throw new Error("需要 timestamp_ms 和 raw_adc 列");
+
+  const sampleIndex = [];
+  const time = [];
+  const rawAdc = [];
+  const raw = [];
+  const csvFiltered = [];
+  const csvFilteredOld = [];
+  const csvQrs = [];
+  const csvEnv = [];
+  const csvSqiState = [];
+  const csvSqiReason = [];
+  const csvSqiWarning = [];
+  const lod = [];
+  const otr = [];
+  for (let i = 1; i < lines.length; i++) {
+    const parts = lines[i].split(",");
+    if (parts.length < header.length) continue;
+    const adc = Number(parts[idxAdc]);
+    if (!Number.isFinite(adc)) continue;
+    sampleIndex.push(idxSample >= 0 ? Number(parts[idxSample]) : sampleIndex.length + 1);
+    time.push(Number(parts[idxTs]) / 1000);
+    rawAdc.push(adc);
+    raw.push((adc - 128) / 128);
+    csvFiltered.push(idxFilt >= 0 ? Number(parts[idxFilt]) : 0);
+    csvFilteredOld.push(idxFiltOld >= 0 ? Number(parts[idxFiltOld]) : NaN);
+    csvQrs.push(idxQrs >= 0 ? Number(parts[idxQrs]) : NaN);
+    csvEnv.push(idxEnv >= 0 ? Number(parts[idxEnv]) : NaN);
+    csvSqiState.push(idxSqiState >= 0 ? Number(parts[idxSqiState]) : NaN);
+    csvSqiReason.push(idxSqiReason >= 0 ? Number(parts[idxSqiReason]) : NaN);
+    csvSqiWarning.push(idxSqiWarning >= 0 ? Number(parts[idxSqiWarning]) : NaN);
+    lod.push(idxLod >= 0 ? Number(parts[idxLod]) : 0);
+    otr.push(idxOtr >= 0 ? Number(parts[idxOtr]) : 0);
+  }
+  const dts = [];
+  for (let i = 1; i < time.length; i++) dts.push(time[i] - time[i - 1]);
+  const fs = dts.length ? Math.round(1 / median(dts)) : FS_DEFAULT;
+  return {
+    sampleIndex,
+    time,
+    rawAdc,
+    raw,
+    csvFiltered,
+    csvFilteredOld,
+    csvQrs,
+    csvEnv,
+    csvSqiState,
+    csvSqiReason,
+    csvSqiWarning,
+    lod,
+    otr,
+    fs,
+    duration: time[time.length - 1] - time[0]
+  };
+}
+
+function runEmbeddedFilter(raw) {
+  const n = raw.length;
+  const filt = new Array(n).fill(0);
+  const qrs = new Array(n).fill(0);
+  const env = new Array(n).fill(0);
+
+  let notch_x1 = 0, notch_x2 = 0, notch_y1 = 0, notch_y2 = 0;
+  let dispX1 = 0, dispX2 = 0, dispEma = 0;
+  let qrs_hp_prev_x = 0, qrs_hp = 0, qrs_lp = 0, qrs_prev = 0;
+  const mwi = new Array(ECG_QRS_MWI_LEN).fill(0);
+  let mwiSum = 0, mwiPos = 0, initialized = false;
+
+  const displayEmaAlpha = 0.2000;
+  const qrsHpAlpha = 0.9164;
+  const qrsLpAlpha = 0.2940;
+
+  for (let i = 0; i < n; i++) {
+    const x = raw[i];
+    if (!initialized) {
+      notch_x1 = notch_x2 = notch_y1 = notch_y2 = x;
+      dispX1 = dispX2 = dispEma = x;
+      qrs_hp_prev_x = x;
+      initialized = true;
+      filt[i] = x;
+      continue;
+    }
+
+    const notch = 0.9812087620 * x
+      - 1.2614176695 * notch_x1
+      + 0.9812087620 * notch_x2
+      + 1.2614176695 * notch_y1
+      - 0.9624175240 * notch_y2;
+
+    notch_x2 = notch_x1;
+    notch_x1 = x;
+    notch_y2 = notch_y1;
+    notch_y1 = notch;
+
+    const dispMed = median3(dispX2, dispX1, x);
+    dispEma = dispEma + displayEmaAlpha * (dispMed - dispEma);
+    dispX2 = dispX1;
+    dispX1 = x;
+
+    qrs_hp = qrsHpAlpha * (qrs_hp + notch - qrs_hp_prev_x);
+    qrs_hp_prev_x = notch;
+    qrs_lp = qrs_lp + qrsLpAlpha * (qrs_hp - qrs_lp);
+
+    const derivative = qrs_lp - qrs_prev;
+    qrs_prev = qrs_lp;
+    const energy = derivative * derivative;
+    mwiSum -= mwi[mwiPos];
+    mwi[mwiPos] = energy;
+    mwiSum += energy;
+    mwiPos = (mwiPos + 1) % ECG_QRS_MWI_LEN;
+
+    filt[i] = dispEma;
+    qrs[i] = qrs_lp;
+    env[i] = mwiSum / ECG_QRS_MWI_LEN;
+  }
+  return { filt, qrs, env };
+}
+
+function median3(a, b, c) {
+  if ((a <= b && b <= c) || (c <= b && b <= a)) return b;
+  if ((b <= a && a <= c) || (c <= a && a <= b)) return a;
+  return c;
+}
+
+function runRealtimeViewFilters(raw) {
+  const n = raw.length;
+  const ema = new Array(n).fill(0);
+  const medEma = new Array(n).fill(0);
+  const hpLp = new Array(n).fill(0);
+  const despike = new Array(n).fill(0);
+
+  let emaY = 0;
+  let medY = 0;
+  let baseline = 0;
+  let hpLpY = 0;
+  let limitedPrev = 0;
+  let despikeY = 0;
+  let initialized = false;
+
+  /*
+   * These candidates are causal real-time filters:
+   * - no future samples
+   * - fixed small memory
+   * - one update per sample
+   * They are display/prototyping channels only until copied to board code.
+   */
+  const emaAlpha = 0.16;
+  const medEmaAlpha = 0.20;
+  const baselineAlpha = 0.0025;
+  const hpLpAlpha = 0.18;
+  const slewLimit = 0.075;
+  const despikeAlpha = 0.18;
+
+  for (let i = 0; i < n; i++) {
+    const x = raw[i];
+    if (!initialized) {
+      emaY = medY = hpLpY = despikeY = limitedPrev = baseline = x;
+      initialized = true;
+    }
+
+    emaY = emaY + emaAlpha * (x - emaY);
+    ema[i] = emaY;
+
+    const x0 = i >= 2 ? raw[i - 2] : x;
+    const x1 = i >= 1 ? raw[i - 1] : x;
+    const med = median3(x0, x1, x);
+    medY = medY + medEmaAlpha * (med - medY);
+    medEma[i] = medY;
+
+    baseline = baseline + baselineAlpha * (x - baseline);
+    const hp = x - baseline;
+    hpLpY = hpLpY + hpLpAlpha * (hp - hpLpY);
+    hpLp[i] = hpLpY;
+
+    let limited = x;
+    const d = x - limitedPrev;
+    if (d > slewLimit) limited = limitedPrev + slewLimit;
+    else if (d < -slewLimit) limited = limitedPrev - slewLimit;
+    limitedPrev = limited;
+    despikeY = despikeY + despikeAlpha * (limited - despikeY);
+    despike[i] = despikeY;
+  }
+
+  return { ema, medEma, hpLp, despike };
+}
+
+function runSqi(data, p) {
+  const fs = data.fs;
+  const win = Math.max(1, Math.round(2 * fs));
+  const states = new Array(data.raw.length).fill("RECOVERING");
+  const reasons = new Array(data.raw.length).fill(0);
+  const warnings = new Array(data.raw.length).fill(0);
+  let count = 0, lodCount = 0, otrCount = 0, clipCount = 0, flatCount = 0, spikeCount = 0;
+  let hardClipRun = 0;
+  let constantRun = 0, previousAdc = -1;
+  const constantLimit = p.constantRun ?? 72;
+  let headroomCount = 0, sumAdc = 0;
+  let minRaw = 2, maxRaw = -2, prevRaw = 0, sumAbsDiff = 0;
+  let state = "RECOVERING", hasWindow = false, goodWindows = 0, reason = 0, warning = 0;
+
+  function reset() {
+    count = lodCount = otrCount = clipCount = flatCount = spikeCount = 0;
+    headroomCount = sumAdc = 0;
+    minRaw = 2; maxRaw = -2; sumAbsDiff = 0;
+  }
+  function evalWindow() {
+    const denom = Math.max(1, count);
+    const latestRange = maxRaw - minRaw;
+    const meanAbsDiff = sumAbsDiff / Math.max(1, denom - 1);
+    const headroomPercent = 100 * headroomCount / denom;
+    const meanAdc = sumAdc / denom;
+    reason = 0;
+    if (lodCount > 0) reason |= 0x01;
+    if (otrCount * 100 >= 2 * denom) reason |= 0x02;
+    if (clipCount * 100 >= p.clipPct * denom) reason |= 0x04;
+    if (flatCount * 100 >= 95 * denom || latestRange < 0.02 || constantRun >= constantLimit) reason |= 0x08;
+    if (spikeCount * 100 >= p.spikePct * denom) reason |= 0x10;
+    if (meanAbsDiff > p.meanDiffMax) reason |= 0x20;
+    warning = (headroomPercent >= p.headroomPct ||
+               meanAdc < p.meanAdcMin ||
+               meanAdc > p.meanAdcMax) ? 0x01 : 0;
+
+    if (reason !== 0) {
+      state = "BAD"; goodWindows = 0;
+    } else if (!hasWindow) {
+      state = "GOOD"; goodWindows = 0;
+    } else if (state !== "GOOD") {
+      goodWindows++;
+      state = goodWindows >= 2 ? "GOOD" : "RECOVERING";
+      if (state === "GOOD") goodWindows = 0;
+    }
+    hasWindow = true;
+    reset();
+  }
+
+  for (let i = 0; i < data.raw.length; i++) {
+    const raw = data.raw[i];
+    constantRun = data.rawAdc[i] === previousAdc ? Math.min(constantRun + 1, constantLimit) : 1;
+    previousAdc = data.rawAdc[i];
+    if (count > 0) {
+      const diff = Math.abs(raw - prevRaw);
+      sumAbsDiff += diff;
+      if (diff < 0.0078125) flatCount++;
+      if (diff > p.spikeDiff) spikeCount++;
+    }
+    prevRaw = raw;
+    sumAdc += data.rawAdc[i];
+    minRaw = Math.min(minRaw, raw);
+    maxRaw = Math.max(maxRaw, raw);
+    if (data.lod[i]) lodCount++;
+    if (p.sqiUseOtr && data.otr && data.otr[i]) otrCount++;
+    if (data.rawAdc[i] <= 2 || data.rawAdc[i] >= 253) {
+      clipCount++;
+      hardClipRun++;
+    } else {
+      hardClipRun = 0;
+    }
+    if (data.rawAdc[i] <= 16 || data.rawAdc[i] >= 239) headroomCount++;
+    count++;
+    if (data.lod[i] && state !== "BAD") { state = "BAD"; reason = 0x01; goodWindows = 0; }
+    if (hardClipRun >= p.hardClipRun) { state = "BAD"; reason |= 0x04; goodWindows = 0; }
+    if (constantRun >= constantLimit) { state = "BAD"; reason |= 0x08; goodWindows = 0; }
+    if (count >= win) evalWindow();
+    states[i] = state;
+    reasons[i] = reason;
+    warnings[i] = warning;
+  }
+  return { states, reasons, warnings };
+}
+
+function detectRPeaks(data, filter, p) {
+  const fs = data.fs;
+  const initSamples = Math.round(p.initSec * fs);
+  const refractory = Math.round(p.refractoryMs * fs / 1000);
+  const rrMin = Math.round(p.rrMinMs * fs / 1000);
+  const rrMax = Math.round(p.rrMaxMs * fs / 1000);
+  const peaks = [];
+  const thresholds = new Array(data.raw.length).fill(0);
+
+  let x2 = 0, x1 = 0, x0 = 0, idx2 = 0, idx1 = 0, idx0 = 0;
+  let envMean = 0, envPeak = 0, threshold = 0;
+  let initCount = 0, initEnvSum = 0, initEnvMax = 0;
+  let initialized = false, hasLastR = false, lastR = 0, prevR = 0;
+
+  for (let i = 0; i < data.raw.length; i++) {
+    const x = filter.qrs[i];
+    const env = filter.env[i];
+    x2 = x1; x1 = x0; x0 = x;
+    idx2 = idx1; idx1 = idx0; idx0 = i;
+
+    if (p.useSqi && sqiStates[i] !== "GOOD") {
+      initialized = false;
+      initCount = 0; initEnvSum = 0; initEnvMax = 0;
+      hasLastR = false;
+      thresholds[i] = threshold;
+      continue;
+    }
+
+    if (!initialized) {
+      initCount++;
+      initEnvSum += env;
+      initEnvMax = Math.max(initEnvMax, env);
+      if (initCount >= initSamples) {
+        envMean = initEnvSum / initCount;
+        envPeak = initEnvMax;
+        threshold = Math.max(0.000001, envMean + p.thresholdScale * (envPeak - envMean));
+        initialized = true;
+      }
+      thresholds[i] = threshold;
+      continue;
+    }
+
+    envMean = envMean + 0.0020 * (env - envMean);
+    if (env > envPeak) envPeak = envPeak + 0.1000 * (env - envPeak);
+    else envPeak = envPeak + 0.0005 * (env - envPeak);
+    threshold = Math.max(0.000001, envMean + p.thresholdScale * (envPeak - envMean));
+    thresholds[i] = threshold;
+
+    const ax2 = Math.abs(x2), ax1 = Math.abs(x1), ax0 = Math.abs(x0);
+    const isLocalMax = ax1 > ax2 && ax1 >= ax0;
+    const above = env > threshold && ax1 > p.minAbsQrs;
+    let outsideRefractory = true, rrReasonable = true, rr = 0;
+    if (hasLastR) {
+      rr = idx1 - lastR;
+      outsideRefractory = rr >= refractory;
+      rrReasonable = rr >= rrMin && rr <= rrMax;
+    }
+    if (isLocalMax && above && outsideRefractory) {
+      if (hasLastR && !rrReasonable && rr < rrMin) continue;
+      prevR = lastR;
+      lastR = idx1;
+      const rrSamples = hasLastR ? lastR - prevR : 0;
+      peaks.push({
+        idx: lastR,
+        time: data.time[lastR],
+        value: filter.qrs[lastR],
+        rrSamples,
+        rrMs: rrSamples ? Math.round(rrSamples * 1000 / fs) : 0,
+        hr: rrSamples ? Math.round(60 * fs / rrSamples) : 0
+      });
+      hasLastR = true;
+      if (env > envPeak) envPeak = env;
+    }
+  }
+  return { peaks, thresholds };
+}
+
+function matchPeaks(manual, auto, fs, matchMs) {
+  const tol = Math.round(matchMs * fs / 1000);
+  const usedAuto = new Set();
+  let tp = 0, fn = 0;
+  const pairs = [];
+  for (const m of manual) {
+    let best = -1, bestD = Infinity;
+    for (let i = 0; i < auto.length; i++) {
+      if (usedAuto.has(i)) continue;
+      const d = Math.abs(auto[i].idx - m.idx);
+      if (d <= tol && d < bestD) { best = i; bestD = d; }
+    }
+    if (best >= 0) {
+      usedAuto.add(best);
+      tp++;
+      pairs.push({ manual: m.idx, auto: auto[best].idx, errSamples: auto[best].idx - m.idx });
+    } else {
+      fn++;
+    }
+  }
+  const fp = auto.length - usedAuto.size;
+  const precision = tp + fp ? tp / (tp + fp) : 0;
+  const recall = tp + fn ? tp / (tp + fn) : 0;
+  const f1 = precision + recall ? 2 * precision * recall / (precision + recall) : 0;
+  return { tp, fp, fn, precision, recall, f1, pairs };
+}
+
+function selectedEvalRange() {
+  if (!ecg) return { i0: 0, i1: 0, label: "无" };
+  const mode = el("evalRangeMode").value;
+  if (mode === "window") {
+    const r = visibleRange();
+    return { i0: r.i0, i1: r.i1, label: `当前显示窗口 ${r.start.toFixed(1)}-${r.end.toFixed(1)}s` };
+  }
+  if (mode === "manual_span" && manualPeaks.length > 0) {
+    const fs = ecg.fs || FS_DEFAULT;
+    const pad = Math.round(2 * fs);
+    const first = manualPeaks[0].idx;
+    const last = manualPeaks[manualPeaks.length - 1].idx;
+    const i0 = clamp(first - pad, 0, ecg.raw.length - 1);
+    const i1 = clamp(last + pad, 0, ecg.raw.length - 1);
+    return { i0, i1, label: `已标注区间±2s ${ecg.time[i0].toFixed(1)}-${ecg.time[i1].toFixed(1)}s` };
+  }
+  return { i0: 0, i1: ecg.raw.length - 1, label: "整份记录" };
+}
+
+function peaksInRange(peaks, range) {
+  return peaks.filter(p => p.idx >= range.i0 && p.idx <= range.i1);
+}
+
+function rrStats(peaks) {
+  const rr = [];
+  for (let i = 1; i < peaks.length; i++) rr.push((peaks[i].idx - peaks[i - 1].idx) / (ecg.fs || FS_DEFAULT));
+  const hr = rr.map(v => 60 / v).filter(Number.isFinite);
+  return { meanHr: mean(hr), rrCv: rr.length ? std(rr) / mean(rr) : 0 };
+}
+
+function updateSqiLabelInfo() {
+  const counts = {};
+  for (const lab of sqiLabels) {
+    counts[lab.label] = (counts[lab.label] || 0) + 1;
+  }
+  const totalSec = sqiLabels.reduce((s, x) => s + (x.endIdx - x.startIdx + 1) / (ecg ? ecg.fs : FS_DEFAULT), 0);
+  const detail = Object.keys(counts).sort().map(k => `${k} ${counts[k]}`).join(", ");
+  el("sqiLabelInfo").textContent = `SQI labels: ${sqiLabels.length} (${detail || "none"}, ${totalSec.toFixed(1)}s)`;
+}
+
+function normalizeSqiLabel(label) {
+  const s = String(label || "").toUpperCase();
+  if (SQI_LABEL_META[s]) return s;
+  return s === "BAD" ? "BAD" : "GOOD";
+}
+
+function sqiLabelShouldReject(label) {
+  const meta = SQI_LABEL_META[normalizeSqiLabel(label)];
+  return meta ? meta.reject : true;
+}
+
+function addSqiWindowLabel(label) {
+  if (!ecg) return;
+  const r = visibleRange();
+  const normalized = normalizeSqiLabel(label);
+  sqiLabels.push({
+    startIdx: r.i0,
+    endIdx: r.i1,
+    startMs: Math.round(ecg.time[r.i0] * 1000),
+    endMs: Math.round(ecg.time[r.i1] * 1000),
+    label: normalized
+  });
+  sqiLabels.sort((a, b) => a.startIdx - b.startIdx);
+  updateSqiLabelInfo();
+  draw();
+}
+
+function evaluateSqiLabels(states) {
+  let goodOk = 0, goodBad = 0, badOk = 0, badGood = 0;
+  const byClass = {};
+  for (const lab of sqiLabels) {
+    const label = normalizeSqiLabel(lab.label);
+    if (!byClass[label]) byClass[label] = { total: 0, ok: 0 };
+    for (let i = lab.startIdx; i <= lab.endIdx; i++) {
+      const predGood = states[i] === "GOOD";
+      const shouldReject = sqiLabelShouldReject(label);
+      byClass[label].total++;
+      if ((!shouldReject && predGood) || (shouldReject && !predGood)) {
+        byClass[label].ok++;
+      }
+      if (!shouldReject) {
+        if (predGood) goodOk++; else goodBad++;
+      } else {
+        if (predGood) badGood++; else badOk++;
+      }
+    }
+  }
+  const goodRecall = goodOk + goodBad ? goodOk / (goodOk + goodBad) : 0;
+  const badRecall = badOk + badGood ? badOk / (badOk + badGood) : 0;
+  const accuracy = goodOk + badOk + goodBad + badGood
+    ? (goodOk + badOk) / (goodOk + badOk + goodBad + badGood)
+    : 0;
+  return { goodOk, goodBad, badOk, badGood, goodRecall, badRecall, accuracy, byClass };
+}
+
+function searchSqiParams() {
+  if (!ecg || sqiLabels.length === 0) {
+    log("请先加载 CSV，并用当前显示窗口标注 SQI 区间标签。至少建议标 GOOD、CLIPPED、NOISY 中的两类。");
+    return;
+  }
+  const base = paramsFromUi();
+  let best = null;
+  const clipPctList = [2, 5, 10, 15, 25, 40, 60];
+  const meanDiffList = [0.08, 0.10, 0.12, 0.15, 0.20, 0.30, 0.45];
+  const spikeDiffList = [0.12, 0.16, 0.20, 0.25, 0.35, 0.50];
+  const spikePctList = [10, 15, 20, 30, 45, 60];
+
+  for (const clipPct of clipPctList) {
+    for (const meanDiffMax of meanDiffList) {
+      for (const spikeDiff of spikeDiffList) {
+        for (const spikePct of spikePctList) {
+          const p = { ...base, clipPct, meanDiffMax, spikeDiff, spikePct };
+          const sqi = runSqi(ecg, p);
+          const states = sqi.states;
+          const ev = evaluateSqiLabels(states);
+          const score = ev.accuracy * 100000 + ev.badRecall * 12000 + ev.goodRecall * 8000 - ev.badGood * 1.5 - ev.goodBad;
+          const cand = { score, p, ev, states, warnings: sqi.warnings };
+          if (!best || cand.score > best.score) best = cand;
+        }
+      }
+    }
+  }
+
+  el("clipPct").value = best.p.clipPct;
+  el("meanDiffMax").value = best.p.meanDiffMax.toFixed(2);
+  el("spikeDiff").value = best.p.spikeDiff.toFixed(2);
+  el("spikePct").value = best.p.spikePct;
+  sqiStates = best.states;
+  sqiWarnings = best.warnings;
+  runDetection();
+  log([
+    "SQI 参数搜索完成。",
+    `accuracy=${best.ev.accuracy.toFixed(4)}`,
+    `GOOD可用召回=${best.ev.goodRecall.toFixed(4)}, 非GOOD拒判召回=${best.ev.badRecall.toFixed(4)}`,
+    `GOOD被误拒 samples=${best.ev.goodBad}, 非GOOD被误放 samples=${best.ev.badGood}`,
+    `byClass=${JSON.stringify(best.ev.byClass)}`,
+    "",
+    `ECG_QUALITY_CLIP_PERCENT=${best.p.clipPct}U`,
+    `ECG_QUALITY_SPIKE_PERCENT=${best.p.spikePct}U`,
+    `ECG_QUALITY_SPIKE_DIFF=${best.p.spikeDiff.toFixed(2)}f`,
+    `ECG_QUALITY_MAX_MEAN_ABS_DIFF=${best.p.meanDiffMax.toFixed(2)}f`,
+    `ECG_QUALITY_HARD_CLIP_RUN=${best.p.hardClipRun}U`,
+    `ECG_QUALITY_CONSTANT_RUN=${best.p.constantRun}U`,
+    `ECG_SQI_USE_OTR=${best.p.sqiUseOtr ? 1 : 0}U`,
+    `ECG_QUALITY_HEADROOM_PERCENT=${best.p.headroomPct}U`,
+    `ECG_QUALITY_MEAN_ADC_MIN=${best.p.meanAdcMin}U`,
+    `ECG_QUALITY_MEAN_ADC_MAX=${best.p.meanAdcMax}U`,
+    "",
+    "说明：SQI 是片段级门控。建议至少标几段 GOOD 和几段 BAD，再相信搜索结果。"
+  ].join("\n"));
+}
+
+function resizeCanvas() {
+  const rect = canvas.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = Math.max(1, Math.round(rect.width * dpr));
+  canvas.height = Math.max(1, Math.round(rect.height * dpr));
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  draw();
+}
+
+function visibleRange() {
+  if (!ecg) return { start: 0, end: 1, i0: 0, i1: 0 };
+  const start = clamp(num("startSec"), 0, Math.max(0, ecg.duration));
+  const win = clamp(num("windowSec"), 2, 120);
+  const end = Math.min(start + win, ecg.time[ecg.time.length - 1]);
+  let i0 = 0, i1 = ecg.time.length - 1;
+  while (i0 < ecg.time.length && ecg.time[i0] < start) i0++;
+  while (i1 > 0 && ecg.time[i1] > end) i1--;
+  return { start, end, i0, i1 };
+}
+
+function getDisplaySignal() {
+  if (!ecg) return [];
+  const mode = el("channelMode").value;
+  const usable = arr => arr && arr.some(Number.isFinite);
+  if (mode === "raw") return ecg.raw;
+  if (mode === "filtered_old") return usable(ecg.csvFilteredOld) ? ecg.csvFilteredOld : ecg.csvFiltered;
+  if (mode === "csv_qrs") return usable(ecg.csvQrs) ? ecg.csvQrs : ecg.csvFiltered;
+  if (mode === "csv_env") return usable(ecg.csvEnv) ? ecg.csvEnv : ecg.csvFiltered;
+  if (mode === "rt_ema") return realtimeViewFilter ? realtimeViewFilter.ema : ecg.raw;
+  if (mode === "rt_med_ema") return realtimeViewFilter ? realtimeViewFilter.medEma : ecg.raw;
+  if (mode === "rt_hp_lp") return realtimeViewFilter ? realtimeViewFilter.hpLp : ecg.raw;
+  if (mode === "rt_despike") return realtimeViewFilter ? realtimeViewFilter.despike : ecg.raw;
+  if (mode === "qrs") return lastFilter ? lastFilter.qrs : ecg.csvFiltered;
+  if (mode === "env") return lastFilter ? lastFilter.env : ecg.csvFiltered;
+  return ecg.csvFiltered;
+}
+
+function draw() {
+  const rect = canvas.getBoundingClientRect();
+  const w = rect.width, h = rect.height;
+  ctx.clearRect(0, 0, w, h);
+  ctx.fillStyle = "#020617";
+  ctx.fillRect(0, 0, w, h);
+  if (!ecg) {
+    ctx.fillStyle = COLORS.text;
+    ctx.fillText("请先加载 RECxxxx.CSV", 24, 32);
+    return;
+  }
+  const padL = 52, padR = 16, padT = 18, padB = 34;
+  const plotW = w - padL - padR, plotH = h - padT - padB;
+  const { start, end, i0, i1 } = visibleRange();
+  const sourceSignal = getDisplaySignal();
+  const signal = movingAverage(sourceSignal, num("viewSmooth"));
+  const ys = signal.slice(i0, i1 + 1).filter(Number.isFinite);
+  if (!ys.length) return;
+  let yMin = Math.min(...ys), yMax = Math.max(...ys);
+  if (el("scaleMode").value === "robust" && ys.length > 20) {
+    yMin = percentile(ys, 0.02);
+    yMax = percentile(ys, 0.98);
+  }
+  if (yMax - yMin < 1e-9) { yMax += 1; yMin -= 1; }
+  const margin = (yMax - yMin) * 0.12;
+  yMax += margin; yMin -= margin;
+  const xOf = t => padL + (t - start) / (end - start) * plotW;
+  const yOf = v => padT + (yMax - v) / (yMax - yMin) * plotH;
+
+  ctx.strokeStyle = COLORS.grid; ctx.lineWidth = 1;
+  ctx.beginPath();
+  for (let k = 0; k <= 10; k++) {
+    const x = padL + plotW * k / 10;
+    ctx.moveTo(x, padT); ctx.lineTo(x, padT + plotH);
+  }
+  for (let k = 0; k <= 6; k++) {
+    const y = padT + plotH * k / 6;
+    ctx.moveTo(padL, y); ctx.lineTo(padL + plotW, y);
+  }
+  ctx.stroke();
+
+  if (checked("showSqiBg") && sqiStates.length) {
+    ctx.fillStyle = COLORS.sqiBad;
+    let inBad = false, badStart = start;
+    for (let i = i0; i <= i1; i++) {
+      let bad = sqiStates[i] !== "GOOD";
+      if (ecg.csvSqiState && Number.isFinite(ecg.csvSqiState[i])) {
+        bad = ecg.csvSqiState[i] !== 1;
+      }
+      if (bad && !inBad) { inBad = true; badStart = ecg.time[i]; }
+      if ((!bad || i === i1) && inBad) {
+        const badEnd = bad ? ecg.time[i] : ecg.time[i - 1];
+        ctx.fillRect(xOf(badStart), padT, xOf(badEnd) - xOf(badStart), plotH);
+        inBad = false;
+      }
+    }
+  }
+
+  for (const lab of sqiLabels) {
+    if (lab.endIdx < i0 || lab.startIdx > i1) continue;
+    const x0 = xOf(ecg.time[Math.max(i0, lab.startIdx)]);
+    const x1 = xOf(ecg.time[Math.min(i1, lab.endIdx)]);
+    const label = normalizeSqiLabel(lab.label);
+    const meta = SQI_LABEL_META[label] || SQI_LABEL_META.UNCERTAIN;
+    ctx.fillStyle = meta.fill;
+    ctx.fillRect(x0, padT, Math.max(1, x1 - x0), plotH);
+    ctx.fillStyle = meta.text;
+    ctx.fillText(label, x0 + 4, padT + 28);
+  }
+
+  if (yMin < 0 && yMax > 0) {
+    const yZero = yOf(0);
+    ctx.strokeStyle = "#334155";
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath();
+    ctx.moveTo(padL, yZero);
+    ctx.lineTo(padL + plotW, yZero);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  function linePlot(arr, color, width, scaleToMain = false) {
+    ctx.strokeStyle = color; ctx.lineWidth = width; ctx.beginPath();
+    let moved = false;
+    let aMin = yMin, aMax = yMax;
+    if (scaleToMain) {
+      const vals = arr.slice(i0, i1 + 1).filter(Number.isFinite);
+      aMin = Math.min(...vals); aMax = Math.max(...vals);
+      if (aMax - aMin < 1e-9) { aMax += 1; aMin -= 1; }
+    }
+    for (let i = i0; i <= i1; i++) {
+      const t = ecg.time[i], v = arr[i];
+      if (!Number.isFinite(v)) continue;
+      const y = scaleToMain ? padT + (aMax - v) / (aMax - aMin) * plotH : yOf(v);
+      const x = xOf(t);
+      if (!moved) { ctx.moveTo(x, y); moved = true; } else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+  }
+
+  linePlot(signal, COLORS.signal, 1.3, false);
+  if (checked("showRaw")) linePlot(ecg.rawAdc, COLORS.raw, 0.7, true);
+  if (checked("showEnv") && lastFilter && el("channelMode").value !== "env") linePlot(lastFilter.env, COLORS.env, 0.8, true);
+  if (checked("showEnv") && lastFilter && lastFilter.thresholds) linePlot(lastFilter.thresholds, COLORS.threshold, 0.8, true);
+
+  function vline(idx, color, width, label) {
+    if (idx < i0 || idx > i1) return;
+    const x = xOf(ecg.time[idx]);
+    ctx.strokeStyle = color; ctx.lineWidth = width;
+    ctx.beginPath(); ctx.moveTo(x, padT); ctx.lineTo(x, padT + plotH); ctx.stroke();
+    if (label) {
+      ctx.fillStyle = color;
+      ctx.fillText(label, x + 3, padT + 12);
+    }
+  }
+  if (checked("showAuto")) {
+    for (const p of autoPeaks) vline(p.idx, COLORS.auto, 1.2, "");
+  }
+  if (checked("showManual")) {
+    for (let i = 0; i < manualPeaks.length; i++) vline(manualPeaks[i].idx, COLORS.manual, 1.8, "");
+  }
+
+  ctx.strokeStyle = COLORS.axis; ctx.strokeRect(padL, padT, plotW, plotH);
+  ctx.fillStyle = COLORS.text; ctx.font = "12px Segoe UI";
+  ctx.fillText(`${start.toFixed(1)}s`, padL, h - 12);
+  ctx.fillText(`${end.toFixed(1)}s`, padL + plotW - 46, h - 12);
+  ctx.fillText(`${yMax.toFixed(2)}`, 6, padT + 10);
+  ctx.fillText(`${yMin.toFixed(2)}`, 6, padT + plotH);
+  ctx.fillText(`窗口 ${el("windowSec").value}s | 平滑 ${el("viewSmooth").value}点 | ${el("scaleMode").value === "robust" ? "抗异常值缩放" : "完整范围"}`, padL + 72, h - 12);
+}
+
+function nearestIndexByTime(t) {
+  if (!ecg) return 0;
+  let lo = 0, hi = ecg.time.length - 1;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (ecg.time[mid] < t) lo = mid + 1; else hi = mid;
+  }
+  return clamp(lo, 0, ecg.time.length - 1);
+}
+
+function refineManualIndex(idx) {
+  const fs = ecg.fs || FS_DEFAULT;
+  const radius = Math.round(0.08 * fs);
+  const signal = lastFilter ? lastFilter.qrs : ecg.csvFiltered;
+  let best = idx, bestVal = -Infinity;
+  for (let i = Math.max(0, idx - radius); i <= Math.min(signal.length - 1, idx + radius); i++) {
+    const v = Math.abs(signal[i]);
+    if (v > bestVal) { bestVal = v; best = i; }
+  }
+  return best;
+}
+
+function addOrDeleteManual(idx, forceAdd) {
+  idx = refineManualIndex(idx);
+  const tol = Math.round(0.12 * (ecg.fs || FS_DEFAULT));
+  let near = -1, bestD = Infinity;
+  for (let i = 0; i < manualPeaks.length; i++) {
+    const d = Math.abs(manualPeaks[i].idx - idx);
+    if (d < bestD) { bestD = d; near = i; }
+  }
+  if (!forceAdd && near >= 0 && bestD <= tol) {
+    manualPeaks.splice(near, 1);
+  } else {
+    manualPeaks.push({ idx, time: ecg.time[idx], value: ecg.csvFiltered[idx] });
+    manualPeaks.sort((a, b) => a.idx - b.idx);
+  }
+  evaluateAndDraw();
+}
+
+function setStartSec(v) {
+  if (!ecg) return;
+  const win = num("windowSec");
+  const maxStart = Math.max(0, ecg.duration - win);
+  el("startSec").value = clamp(v, 0, maxStart).toFixed(2);
+  draw();
+}
+
+function panWindow(fraction) {
+  if (!ecg) return;
+  setStartSec(num("startSec") + num("windowSec") * fraction);
+}
+
+function zoomWindowAt(factor, clientX) {
+  if (!ecg) return;
+  const rect = canvas.getBoundingClientRect();
+  const padL = 52, padR = 16;
+  const plotW = Math.max(1, rect.width - padL - padR);
+  const x = clamp((clientX - rect.left - padL) / plotW, 0, 1);
+  const oldStart = num("startSec");
+  const oldWin = num("windowSec");
+  const centerTime = oldStart + oldWin * x;
+  const newWin = clamp(oldWin * factor, 1, 120);
+  el("windowSec").value = newWin.toFixed(2);
+  setStartSec(centerTime - newWin * x);
+}
+
+function applyCleanView() {
+  el("windowSec").value = "4";
+  el("channelMode").value = "rt_med_ema";
+  el("showRaw").checked = false;
+  el("showAuto").checked = false;
+  el("showManual").checked = true;
+  el("showEnv").checked = false;
+  el("showSqiBg").checked = true;
+  el("viewSmooth").value = "5";
+  el("scaleMode").value = "robust";
+  draw();
+}
+
+function runDetection() {
+  if (!ecg) return;
+  const p = paramsFromUi();
+  lastFilter = runEmbeddedFilter(ecg.raw);
+  const sqi = runSqi(ecg, p);
+  sqiStates = sqi.states;
+  sqiWarnings = sqi.warnings;
+  const det = detectRPeaks(ecg, lastFilter, p);
+  autoPeaks = det.peaks;
+  lastFilter.thresholds = det.thresholds;
+  const neg = autoPeaks.filter(pk => lastFilter.qrs[pk.idx] < 0).length;
+  const pos = autoPeaks.length - neg;
+  el("polarityInfo").textContent = `极性：${neg > pos ? "负向为主" : "正向为主"} (${neg}/${pos})`;
+  const goodPct = 100 * sqiStates.filter(s => s === "GOOD").length / sqiStates.length;
+  const warningPct = 100 * sqiWarnings.filter(w => w & 0x01).length / sqiWarnings.length;
+  const recordedWarnings = ecg.csvSqiWarning.filter(Number.isFinite);
+  const recordedWarningPct = recordedWarnings.length
+    ? 100 * recordedWarnings.filter(w => w & 0x01).length / recordedWarnings.length
+    : null;
+  el("sqiInfo").textContent = `SQI GOOD：${goodPct.toFixed(1)}%，重放低余量预警：${warningPct.toFixed(1)}%` +
+    (recordedWarningPct === null ? "" : `，板端记录：${recordedWarningPct.toFixed(1)}%`);
+  el("sqiInfo").className = goodPct > 70 ? "pill good" : "pill bad";
+  evaluateAndDraw();
+}
+
+function evaluateAndDraw() {
+  if (!ecg) return;
+  const p = paramsFromUi();
+  const range = selectedEvalRange();
+  const evalManual = peaksInRange(manualPeaks, range);
+  const evalAuto = peaksInRange(autoPeaks, range);
+  lastEval = matchPeaks(evalManual, evalAuto, ecg.fs, p.matchMs);
+  const rs = rrStats(evalAuto);
+  el("manualCount").textContent = manualPeaks.length;
+  el("autoCount").textContent = `${evalAuto.length}/${autoPeaks.length}`;
+  el("tpCount").textContent = lastEval.tp;
+  el("fpCount").textContent = lastEval.fp;
+  el("fnCount").textContent = lastEval.fn;
+  el("f1Score").textContent = lastEval.f1.toFixed(3);
+  el("meanHr").textContent = rs.meanHr ? rs.meanHr.toFixed(1) : "0";
+  el("rrCv").textContent = rs.rrCv ? rs.rrCv.toFixed(3) : "0";
+  el("fileInfo").textContent = `${fileName || "ECG"}: ${ecg.raw.length}点, fs=${ecg.fs}Hz, 评估=${range.label}`;
+  draw();
+}
+
+function searchParams() {
+  if (!ecg || manualPeaks.length < 3) {
+    log("需要先加载数据，并至少人工标注 3 个 R 峰。");
+    return;
+  }
+  const base = paramsFromUi();
+  const filter = lastFilter || runEmbeddedFilter(ecg.raw);
+  let best = null;
+  const thresholdScales = [0.05, 0.10, 0.15, 0.20, 0.25, 0.30, 0.40, 0.55, 0.65];
+  const refractoryMsList = [220, 250, 280, 320, 360];
+  const minAbsList = [0.002, 0.005, 0.010, 0.020, 0.040];
+  const useSqiList = [base.useSqi];
+  const clipPctList = [5, 15, 30, 50];
+  const meanDiffList = [0.10, 0.15, 0.25, 0.40];
+
+  for (const thresholdScale of thresholdScales) {
+    for (const refractoryMs of refractoryMsList) {
+      for (const minAbsQrs of minAbsList) {
+        for (const useSqi of useSqiList) {
+          for (const clipPct of clipPctList) {
+            for (const meanDiffMax of meanDiffList) {
+              const p = { ...base, thresholdScale, refractoryMs, minAbsQrs, useSqi, clipPct, meanDiffMax };
+              {
+                const sqi = runSqi(ecg, p);
+                sqiStates = sqi.states;
+                sqiWarnings = sqi.warnings;
+              }
+              const det = detectRPeaks(ecg, filter, p);
+              const range = selectedEvalRange();
+              const evalManual = peaksInRange(manualPeaks, range);
+              const evalAuto = peaksInRange(det.peaks, range);
+              const ev = matchPeaks(evalManual, evalAuto, ecg.fs, p.matchMs);
+              const score = ev.f1 * 100000 - ev.fp * 8 - ev.fn * 12 - Math.abs(evalAuto.length - evalManual.length);
+              const cand = { score, ev, peaks: det.peaks, thresholds: det.thresholds, p };
+              if (!best || cand.score > best.score) best = cand;
+            }
+          }
+        }
+      }
+    }
+  }
+
+  el("thresholdScale").value = best.p.thresholdScale.toFixed(2);
+  el("refractoryMs").value = best.p.refractoryMs;
+  el("minAbsQrs").value = best.p.minAbsQrs.toFixed(3);
+  el("useSqi").value = best.p.useSqi ? "1" : "0";
+  el("clipPct").value = best.p.clipPct;
+  el("meanDiffMax").value = best.p.meanDiffMax.toFixed(2);
+  lastFilter = filter;
+  lastFilter.thresholds = best.thresholds;
+  {
+    const sqi = runSqi(ecg, best.p);
+    sqiStates = sqi.states;
+    sqiWarnings = sqi.warnings;
+  }
+  autoPeaks = best.peaks;
+  evaluateAndDraw();
+  log([
+    "参数搜索完成。",
+    `best F1=${best.ev.f1.toFixed(4)}, TP=${best.ev.tp}, FP=${best.ev.fp}, FN=${best.ev.fn}`,
+    `thresholdScale=${best.p.thresholdScale}`,
+    `refractoryMs=${best.p.refractoryMs}`,
+    `minAbsQrs=${best.p.minAbsQrs}`,
+    `useSqi=${best.p.useSqi}`,
+    `clipPct=${best.p.clipPct}`,
+    `meanDiffMax=${best.p.meanDiffMax}`,
+    "",
+    "注意：搜索严格保持当前SQI门控开关，不会通过自动关闭SQI来提高F1。",
+    "请用多个 REC 文件重复标注/验证，避免只对一段数据过拟合。"
+  ].join("\n"));
+}
+
+function exportCParams() {
+  const p = paramsFromUi();
+  const text = `/* Generated by ECG R峰标注与逻辑训练工具
+ * Source: ${fileName || "unknown"}
+ * Manual peaks: ${manualPeaks.length}
+ * Auto peaks: ${autoPeaks.length}
+ * F1: ${lastEval ? lastEval.f1.toFixed(4) : "NA"}
+ * R-peak search SQI gate: ${p.useSqi ? "ENABLED" : "DISABLED_FOR_ISOLATED_RPEAK_TUNING"}
+ */
+
+/* ecg_config.h: R-peak */
+#define ECG_RPEAK_THRESHOLD_SCALE      ${p.thresholdScale.toFixed(2)}f
+#define ECG_RPEAK_MIN_ABS_QRS          ${p.minAbsQrs.toFixed(3)}f
+
+#define RPEAK_REFRACTORY_MS            ${Math.round(p.refractoryMs)}U
+#define RR_MIN_MS                      ${Math.round(p.rrMinMs)}U
+#define RR_MAX_MS                      ${Math.round(p.rrMaxMs)}U
+#define RPEAK_INIT_SECONDS             ${Math.round(p.initSec)}U
+
+/* ecg_config.h: SQI */
+#define ECG_SQI_USE_OTR                ${p.sqiUseOtr ? 1 : 0}U
+#define ECG_QUALITY_CLIP_PERCENT       ${Math.round(p.clipPct)}U
+#define ECG_QUALITY_SPIKE_PERCENT      ${Math.round(p.spikePct)}U
+#define ECG_QUALITY_HARD_CLIP_RUN      ${p.hardClipRun}U
+#define ECG_QUALITY_CONSTANT_RUN       ${p.constantRun}U
+#define ECG_QUALITY_LOW_HEADROOM_CODE  16U
+#define ECG_QUALITY_HIGH_HEADROOM_CODE 239U
+#define ECG_QUALITY_HEADROOM_PERCENT   ${Math.round(p.headroomPct)}U
+#define ECG_QUALITY_MEAN_ADC_MIN       ${Math.round(p.meanAdcMin)}U
+#define ECG_QUALITY_MEAN_ADC_MAX       ${Math.round(p.meanAdcMax)}U
+#define ECG_QUALITY_SPIKE_DIFF         ${p.spikeDiff.toFixed(2)}f
+#define ECG_QUALITY_MAX_MEAN_ABS_DIFF  ${p.meanDiffMax.toFixed(2)}f
+`;
+  log(text);
+}
+
+function download(name, text, type) {
+  const blob = new Blob([text], { type: type || "text/plain;charset=utf-8" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 100);
+}
+
+function exportLabelsCsv() {
+  if (!ecg) return;
+  const lines = ["sample_index,timestamp_ms,label,note"];
+  for (const p of manualPeaks) {
+    lines.push(`${ecg.sampleIndex[p.idx]},${Math.round(ecg.time[p.idx] * 1000)},R,manual`);
+  }
+  download(`${fileName.replace(/\.csv$/i, "")}_R_LABELS.csv`, lines.join("\n"), "text/csv;charset=utf-8");
+}
+
+function exportJson() {
+  if (!ecg) return;
+  const obj = {
+    source_file: fileName,
+    fs_hz: ecg.fs,
+    params: paramsFromUi(),
+    manual_r_peaks: manualPeaks.map(p => ({
+      idx: p.idx,
+      sample_index: ecg.sampleIndex[p.idx],
+      timestamp_ms: Math.round(ecg.time[p.idx] * 1000)
+    })),
+    auto_r_peaks: autoPeaks.map(p => ({
+      idx: p.idx,
+      sample_index: ecg.sampleIndex[p.idx],
+      timestamp_ms: Math.round(ecg.time[p.idx] * 1000),
+      rr_ms: p.rrMs,
+      hr_bpm: p.hr
+    })),
+    sqi_labels: sqiLabels,
+    evaluation: lastEval
+  };
+  download(`${fileName.replace(/\.csv$/i, "")}_TRAINING.json`, JSON.stringify(obj, null, 2), "application/json;charset=utf-8");
+}
+
+function importLabels(file) {
+  const reader = new FileReader();
+  reader.onload = e => {
+    const text = e.target.result;
+    try {
+      if (file.name.toLowerCase().endsWith(".json")) {
+        const obj = JSON.parse(text);
+        manualPeaks = (obj.manual_r_peaks || []).map(x => {
+          const idx = Number.isFinite(x.idx) ? x.idx : nearestIndexByTime((x.timestamp_ms || 0) / 1000);
+          return { idx, time: ecg.time[idx], value: ecg.csvFiltered[idx] };
+        });
+        sqiLabels = (obj.sqi_labels || []).map(x => {
+          const startIdx = Number.isFinite(x.startIdx) ? x.startIdx : nearestIndexByTime((x.startMs || 0) / 1000);
+          const endIdx = Number.isFinite(x.endIdx) ? x.endIdx : nearestIndexByTime((x.endMs || 0) / 1000);
+          return {
+            startIdx: clamp(startIdx, 0, ecg.raw.length - 1),
+            endIdx: clamp(endIdx, 0, ecg.raw.length - 1),
+            startMs: x.startMs || Math.round(ecg.time[startIdx] * 1000),
+            endMs: x.endMs || Math.round(ecg.time[endIdx] * 1000),
+            label: normalizeSqiLabel(x.label)
+          };
+        });
+      } else {
+        const lines = text.split(/\r?\n/).filter(Boolean);
+        const header = lines[0].split(",").map(x => x.trim());
+        const tsCol = header.indexOf("timestamp_ms");
+        const sampleCol = header.indexOf("sample_index");
+        manualPeaks = [];
+        for (let i = 1; i < lines.length; i++) {
+          const parts = lines[i].split(",");
+          let idx = 0;
+          if (tsCol >= 0) idx = nearestIndexByTime(Number(parts[tsCol]) / 1000);
+          else if (sampleCol >= 0) idx = Math.max(0, ecg.sampleIndex.indexOf(Number(parts[sampleCol])));
+          manualPeaks.push({ idx, time: ecg.time[idx], value: ecg.csvFiltered[idx] });
+        }
+      }
+      manualPeaks.sort((a, b) => a.idx - b.idx);
+      updateSqiLabelInfo();
+      evaluateAndDraw();
+      log(`已导入 ${manualPeaks.length} 个人工 R 峰标签。`);
+    } catch (err) {
+      alert("导入失败：" + err.message);
+    }
+  };
+  reader.readAsText(file);
+}
+
+function loadFile(file) {
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      fileName = file.name;
+      ecg = parseCSV(e.target.result);
+      manualPeaks = [];
+      sqiLabels = [];
+      autoPeaks = [];
+      sqiStates = [];
+      sqiWarnings = [];
+      realtimeViewFilter = runRealtimeViewFilters(ecg.raw);
+      lastFilter = runEmbeddedFilter(ecg.raw);
+      const p = paramsFromUi();
+      {
+        const sqi = runSqi(ecg, p);
+        sqiStates = sqi.states;
+        sqiWarnings = sqi.warnings;
+      }
+      const det = detectRPeaks(ecg, lastFilter, p);
+      autoPeaks = det.peaks;
+      lastFilter.thresholds = det.thresholds;
+      el("startSec").value = "0";
+      el("fileInfo").textContent = `${file.name}: ${ecg.raw.length}点, fs=${ecg.fs}Hz, ${ecg.duration.toFixed(1)}s`;
+      el("fileInfo").className = "pill good";
+      updateSqiLabelInfo();
+      runDetection();
+      log(`已加载 ${file.name}
+采样点: ${ecg.raw.length}
+估计采样率: ${ecg.fs} Hz
+时长: ${ecg.duration.toFixed(2)} s
+
+当前板端逻辑已运行。请点击波形标注真实 R 峰，然后点击“按人工标签搜索参数”。
+
+提示：如果 CSV filtered 难看，可以切换“实时候选”通道比较。候选通道均为逐点实时滤波，不使用未来数据。`);
+    } catch (err) {
+      alert("加载失败：" + err.message);
+    }
+  };
+  reader.readAsText(file);
+}
+
+canvas.addEventListener("click", evt => {
+  if (!ecg) return;
+  const rect = canvas.getBoundingClientRect();
+  const x = evt.clientX - rect.left;
+  const padL = 52, padR = 16;
+  const w = rect.width;
+  const { start, end } = visibleRange();
+  const t = start + (x - padL) / (w - padL - padR) * (end - start);
+  if (!Number.isFinite(t)) return;
+  addOrDeleteManual(nearestIndexByTime(t), evt.shiftKey);
+});
+
+canvas.addEventListener("wheel", evt => {
+  if (!ecg) return;
+  evt.preventDefault();
+  if (evt.shiftKey) {
+    panWindow(evt.deltaY > 0 ? 0.15 : -0.15);
+  } else {
+    zoomWindowAt(evt.deltaY > 0 ? 1.18 : 1 / 1.18, evt.clientX);
+  }
+}, { passive: false });
+
+window.addEventListener("keydown", evt => {
+  if (!ecg) return;
+  const tag = (evt.target && evt.target.tagName || "").toLowerCase();
+  if (tag === "input" || tag === "textarea" || tag === "select") return;
+  if (evt.key === "ArrowLeft" || evt.key.toLowerCase() === "a") {
+    panWindow(-0.5);
+    evt.preventDefault();
+  } else if (evt.key === "ArrowRight" || evt.key.toLowerCase() === "d") {
+    panWindow(0.5);
+    evt.preventDefault();
+  } else if (evt.key === "+" || evt.key === "=") {
+    zoomWindowAt(1 / 1.25, canvas.getBoundingClientRect().left + canvas.getBoundingClientRect().width / 2);
+    evt.preventDefault();
+  } else if (evt.key === "-" || evt.key === "_") {
+    zoomWindowAt(1.25, canvas.getBoundingClientRect().left + canvas.getBoundingClientRect().width / 2);
+    evt.preventDefault();
+  }
+});
+
+el("fileInput").addEventListener("change", e => { if (e.target.files[0]) loadFile(e.target.files[0]); });
+el("labelInput").addEventListener("change", e => { if (e.target.files[0] && ecg) importLabels(e.target.files[0]); });
+el("btnLoadLabels").onclick = () => el("labelInput").click();
+el("btnRun").onclick = runDetection;
+el("btnSearch").onclick = searchParams;
+el("btnExportC").onclick = exportCParams;
+el("btnExportLabels").onclick = exportLabelsCsv;
+el("btnExportJson").onclick = exportJson;
+el("btnClearAuto").onclick = () => { autoPeaks = []; evaluateAndDraw(); };
+el("btnClearLabels").onclick = () => { if (confirm("确定清空人工标签？")) { manualPeaks = []; evaluateAndDraw(); } };
+el("btnMarkSqiGood").onclick = () => addSqiWindowLabel("GOOD");
+el("btnMarkSqiClipped").onclick = () => addSqiWindowLabel("CLIPPED");
+el("btnMarkSqiNoisy").onclick = () => addSqiWindowLabel("NOISY");
+el("btnMarkSqiDrift").onclick = () => addSqiWindowLabel("DRIFT");
+el("btnMarkSqiFlat").onclick = () => addSqiWindowLabel("FLAT");
+el("btnMarkSqiUncertain").onclick = () => addSqiWindowLabel("UNCERTAIN");
+el("btnClearSqiLabels").onclick = () => { if (confirm("确定清空 SQI 区间标签？")) { sqiLabels = []; updateSqiLabelInfo(); draw(); } };
+el("btnSearchSqi").onclick = searchSqiParams;
+el("btnPrev").onclick = () => panWindow(-0.8);
+el("btnNext").onclick = () => panWindow(0.8);
+el("btnZoomIn").onclick = () => { el("windowSec").value = Math.max(1, num("windowSec") / 1.5).toFixed(1); setStartSec(num("startSec")); };
+el("btnZoomOut").onclick = () => { el("windowSec").value = Math.min(120, num("windowSec") * 1.5).toFixed(1); draw(); };
+el("btnCleanView").onclick = applyCleanView;
+["windowSec", "startSec", "channelMode", "showRaw", "showAuto", "showManual", "showEnv", "showSqiBg", "viewSmooth", "scaleMode"].forEach(id => el(id).addEventListener("input", draw));
+el("evalRangeMode").addEventListener("change", evaluateAndDraw);
+["thresholdScale","refractoryMs","minAbsQrs","initSec","matchMs","useSqi","clipPct","meanDiffMax","spikeDiff","spikePct","sqiUseOtr","hardClipRun","constantRun","headroomPct","meanAdcMin","meanAdcMax","rrMinMs","rrMaxMs"].forEach(id => {
+  el(id).addEventListener("change", runDetection);
+});
+window.addEventListener("resize", resizeCanvas);
+resizeCanvas();
+</script>
+</body>
+</html>
