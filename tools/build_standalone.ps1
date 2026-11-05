@@ -27,6 +27,15 @@ try {
         Check $gcc ($flags + @('-c',$file.FullName,'-o',$object))
         $objects += $object
     }
+    if ($Profile -eq 'workstation') {
+        # Link the patched Ethernet adapter before the bundled lwIP archive.
+        $netif = Join-Path $bsp 'libsrc/lwip202_v1_2/src/contrib/ports/xilinx/netif'
+        foreach ($name in 'xemacpsif.c', 'xemacpsif_hw.c') {
+            $object = Join-Path "$out/objects" ($name + '.o')
+            Check $gcc ($flags + @('-c', (Join-Path $netif $name), '-o', $object))
+            $objects += $object
+        }
+    }
     $elf = Join-Path $out 'SD_state.elf'
     Check $gcc (@('-mcpu=cortex-a9','-mfpu=vfpv3','-mfloat-abi=hard',
         '-Wl,-build-id=none',"-specs=$PSScriptRoot/standalone_startup.spec", "-Wl,-T,$src/lscript.ld", "-Wl,-Map,$out/SD_state.map",

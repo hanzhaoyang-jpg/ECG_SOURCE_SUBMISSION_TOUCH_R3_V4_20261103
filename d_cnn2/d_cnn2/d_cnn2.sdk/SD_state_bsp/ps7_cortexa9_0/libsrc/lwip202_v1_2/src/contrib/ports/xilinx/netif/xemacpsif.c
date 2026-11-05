@@ -76,6 +76,7 @@ static u8_t xemacps_mld6_mcast_entry_mask;
 
 XEmacPs_Config *mac_config;
 struct netif *NetIf;
+extern enum ethernet_link_status eth_link_status;
 
 #if defined(OS_IS_FREERTOS) && defined(__arm__) && !defined(ARMR5)
 int32_t lExpireCounter = 0;
@@ -290,8 +291,6 @@ static err_t low_level_init(struct netif *netif)
 
 	s32_t status = XST_SUCCESS;
 
-	NetIf = netif;
-
 	xemacpsif = mem_malloc(sizeof *xemacpsif);
 	if (xemacpsif == NULL) {
 		LWIP_DEBUGF(NETIF_DEBUG, ("xemacpsif_init: out of memory\r\n"));
@@ -300,6 +299,7 @@ static err_t low_level_init(struct netif *netif)
 
 	xemac = mem_malloc(sizeof *xemac);
 	if (xemac == NULL) {
+		mem_free(xemacpsif);
 		LWIP_DEBUGF(NETIF_DEBUG, ("xemacpsif_init: out of memory\r\n"));
 		return ERR_MEM;
 	}
@@ -307,11 +307,6 @@ static err_t low_level_init(struct netif *netif)
 	xemac->state = (void *)xemacpsif;
 	xemac->topology_index = xtopology_find_index(mac_address);
 	xemac->type = xemac_type_emacps;
-
-	xemacpsif->send_q = NULL;
-	xemacpsif->recv_q = pq_create_queue();
-	if (!xemacpsif->recv_q)
-		return ERR_MEM;
 
 	/* maximum transfer unit */
 #ifdef ZYNQMP_USE_JUMBO
@@ -339,9 +334,6 @@ static err_t low_level_init(struct netif *netif)
 	netif->flags |= NETIF_FLAG_IGMP;
 #endif
 
-#if !NO_SYS
-	sys_sem_new(&xemac->sem_rx_data_available, 0);
-#endif
 	/* obtain config of this emac */
 	mac_config = (XEmacPs_Config *)xemacps_lookup_config((unsigned)(UINTPTR)netif->state);
 
@@ -353,6 +345,23 @@ static err_t low_level_init(struct netif *netif)
 
 	/* initialize the mac */
 	init_emacps(xemacpsif, netif);
+	if (eth_link_status != ETH_LINK_UP) {
+		mem_free(xemac);
+		mem_free(xemacpsif);
+		return ERR_IF;
+	}
+
+	xemacpsif->send_q = NULL;
+	xemacpsif->recv_q = pq_create_queue();
+	if (!xemacpsif->recv_q) {
+		mem_free(xemac);
+		mem_free(xemacpsif);
+		return ERR_MEM;
+	}
+#if !NO_SYS
+	sys_sem_new(&xemac->sem_rx_data_available, 0);
+#endif
+	NetIf = netif;
 
 	dmacrreg = XEmacPs_ReadReg(xemacpsif->emacps.Config.BaseAddress,
 														XEMACPS_DMACR_OFFSET);
@@ -711,8 +720,7 @@ err_t xemacpsif_init(struct netif *netif)
 	netif->output_ip6 = ethip6_output;
 #endif
 
-	low_level_init(netif);
-	return ERR_OK;
+	return low_level_init(netif);
 }
 
 /*
